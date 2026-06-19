@@ -29,3 +29,7 @@ The script builds the SwiftPM app, stages `dist/MacScreenRecorder.app`, signs it
 ## Notes
 
 For stable Screen Recording permissions during development, sign the app with a persistent local codesigning identity. The build script automatically uses an available identity such as `Apple Development` or another valid codesigning certificate.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
