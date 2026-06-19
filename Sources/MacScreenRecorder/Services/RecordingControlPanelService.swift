@@ -12,6 +12,7 @@ final class RecordingControlPanelService {
         isMicrophoneMuted: Bool,
         onPauseToggle: @escaping @MainActor () -> Void,
         onMicrophoneToggle: @escaping @MainActor () -> Void,
+        onShowMainWindow: @escaping @MainActor () -> Void,
         onStop: @escaping @MainActor () -> Void
     ) {
         state.elapsedText = elapsedText
@@ -23,13 +24,15 @@ final class RecordingControlPanelService {
                 state: state,
                 onPauseToggle: onPauseToggle,
                 onMicrophoneToggle: onMicrophoneToggle,
+                onShowMainWindow: onShowMainWindow,
                 onStop: onStop
             )
             let hostingView = NSHostingView(rootView: rootView)
-            hostingView.frame = CGRect(x: 0, y: 0, width: 338, height: 58)
+            let panelSize = CGSize(width: 382, height: 58)
+            hostingView.frame = CGRect(origin: .zero, size: panelSize)
 
             let panel = NSPanel(
-                contentRect: CGRect(x: 0, y: 0, width: 338, height: 58),
+                contentRect: CGRect(origin: .zero, size: panelSize),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -44,8 +47,8 @@ final class RecordingControlPanelService {
             panel.isMovableByWindowBackground = true
 
             if let screenFrame = NSScreen.main?.visibleFrame {
-                let x = screenFrame.midX - 169
-                let y = screenFrame.maxY - 82
+                let x = screenFrame.maxX - panelSize.width - 18
+                let y = screenFrame.minY + 18
                 panel.setFrameOrigin(CGPoint(x: x, y: y))
             }
 
@@ -78,6 +81,7 @@ private struct RecordingControlPanelView: View {
     @ObservedObject var state: RecordingControlPanelState
     let onPauseToggle: @MainActor () -> Void
     let onMicrophoneToggle: @MainActor () -> Void
+    let onShowMainWindow: @MainActor () -> Void
     let onStop: @MainActor () -> Void
 
     var body: some View {
@@ -109,6 +113,15 @@ private struct RecordingControlPanelView: View {
             .help(state.isMicrophoneMuted ? "Mikrofon einschalten" : "Mikrofon stumm")
 
             Button {
+                onShowMainWindow()
+            } label: {
+                Image(systemName: "macwindow")
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.borderless)
+            .help("Hauptfenster anzeigen")
+
+            Button {
                 onStop()
             } label: {
                 Image(systemName: "stop.fill")
@@ -118,7 +131,7 @@ private struct RecordingControlPanelView: View {
             .help("Stoppen")
         }
         .padding(.horizontal, 14)
-        .frame(width: 338, height: 58)
+        .frame(width: 382, height: 58)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)

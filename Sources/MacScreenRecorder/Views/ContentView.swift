@@ -16,24 +16,26 @@ struct ContentView: View {
 
                     Divider()
 
-                    HStack(alignment: .top, spacing: 22) {
-                        VStack(spacing: 14) {
-                            PresetSection()
-                            PermissionBanner()
+                    VStack(spacing: 16) {
+                        PresetSection()
+                        PermissionBanner()
+
+                        HStack(alignment: .top, spacing: 16) {
                             SourceSection()
+                                .frame(minWidth: 390, maxWidth: 500)
+
+                            RecordingActionPanel()
+                                .frame(maxWidth: .infinity)
+                        }
+
+                        HStack(alignment: .top, spacing: 16) {
                             VideoSection()
                             AudioSection()
                         }
-                        .frame(width: 430)
 
-                        VStack(spacing: 14) {
-                            RecordingActionPanel()
-                            LastRecordingPanel()
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxWidth: .infinity)
+                        LastRecordingPanel()
                     }
-                    .padding(24)
+                    .padding(20)
                 }
             }
         }
@@ -143,9 +145,10 @@ private struct PresetSection: View {
     @EnvironmentObject private var recorder: RecordingCoordinator
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        HStack(spacing: 14) {
             Label("Preset", systemImage: "wand.and.stars")
                 .font(.headline)
+                .frame(width: 96, alignment: .leading)
 
             Picker("Preset", selection: $recorder.settings.selectedPreset) {
                 ForEach(RecordingPreset.allCases) { preset in
@@ -156,13 +159,18 @@ private struct PresetSection: View {
             .onChange(of: recorder.settings.selectedPreset) { _, preset in
                 recorder.applyPreset(preset)
             }
+            .frame(width: 230)
 
             Text(recorder.settings.selectedPreset.detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 }
@@ -184,7 +192,7 @@ private struct SourceSection: View {
             .pickerStyle(.segmented)
             .labelsHidden()
 
-            HStack {
+            HStack(spacing: 8) {
                 Button {
                     recorder.selectBrowserWindow()
                 } label: {
@@ -213,7 +221,7 @@ private struct SourceSection: View {
                         recorder.openLastRecordingOrChooseVideoForEditor()
                     }
             }
-            .frame(height: 146)
+            .frame(height: 122)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             if recorder.captureMode == .region {
@@ -234,7 +242,7 @@ private struct SourceSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
@@ -284,37 +292,44 @@ private struct VideoSection: View {
     @EnvironmentObject private var recorder: RecordingCoordinator
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Label("Video", systemImage: "rectangle.inset.filled")
                 .font(.headline)
 
-            Picker("Aufloesung", selection: $recorder.settings.videoResolution) {
-                ForEach(VideoResolution.allCases) { resolution in
-                    Text(resolution.title).tag(resolution)
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Picker("Aufloesung", selection: $recorder.settings.videoResolution) {
+                        ForEach(VideoResolution.allCases) { resolution in
+                            Text(resolution.title).tag(resolution)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    Text(recorder.settings.videoResolution.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Picker("Codec", selection: $recorder.settings.videoCodec) {
+                        ForEach(VideoCodec.allCases) { codec in
+                            Text(codec.title).tag(codec)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    Picker("FPS", selection: $recorder.settings.frameRate) {
+                        ForEach(FrameRate.allCases) { frameRate in
+                            Text(frameRate.title).tag(frameRate)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            Text(recorder.settings.videoResolution.detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Picker("Codec", selection: $recorder.settings.videoCodec) {
-                ForEach(VideoCodec.allCases) { codec in
-                    Text(codec.title).tag(codec)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            Picker("FPS", selection: $recorder.settings.frameRate) {
-                ForEach(FrameRate.allCases) { frameRate in
-                    Text(frameRate.title).tag(frameRate)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
 
             Picker("Qualitaet", selection: $recorder.settings.videoQuality) {
                 ForEach(VideoQuality.allCases) { quality in
@@ -327,6 +342,7 @@ private struct VideoSection: View {
             Text(recorder.settings.videoQuality.detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
 
             HStack {
                 Text("Bitrate")
@@ -356,9 +372,10 @@ private struct VideoSection: View {
             Text(recorder.settings.exportDestination.detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
@@ -371,20 +388,22 @@ private struct AudioSection: View {
     @EnvironmentObject private var recorder: RecordingCoordinator
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Label("Audio", systemImage: "waveform")
                 .font(.headline)
 
-            Toggle(isOn: $recorder.settings.includeMicrophone) {
-                Label("Mikrofon", systemImage: "mic")
-            }
-
-            Picker("Eingang", selection: $recorder.settings.selectedMicrophoneID) {
-                ForEach(recorder.microphones) { microphone in
-                    Text(microphone.name).tag(microphone.id)
+            HStack(spacing: 12) {
+                Toggle(isOn: $recorder.settings.includeMicrophone) {
+                    Label("Mikrofon", systemImage: "mic")
                 }
+
+                Picker("Eingang", selection: $recorder.settings.selectedMicrophoneID) {
+                    ForEach(recorder.microphones) { microphone in
+                        Text(microphone.name).tag(microphone.id)
+                    }
+                }
+                .disabled(!recorder.settings.includeMicrophone)
             }
-            .disabled(!recorder.settings.includeMicrophone)
 
             LevelMeter(title: "Mic-Pegel", level: recorder.microphoneLevel)
 
@@ -403,21 +422,23 @@ private struct AudioSection: View {
             }
 
             if recorder.settings.highlightClicks {
-                Picker("Klickfarbe", selection: $recorder.settings.clickHighlightColor) {
-                    ForEach(ClickHighlightColor.allCases) { color in
-                        Text(color.title).tag(color)
+                HStack(spacing: 12) {
+                    Picker("Klickfarbe", selection: $recorder.settings.clickHighlightColor) {
+                        ForEach(ClickHighlightColor.allCases) { color in
+                            Text(color.title).tag(color)
+                        }
                     }
-                }
 
-                Picker("Klickgroesse", selection: $recorder.settings.clickHighlightSize) {
-                    ForEach(ClickHighlightSize.allCases) { size in
-                        Text(size.title).tag(size)
+                    Picker("Klickgroesse", selection: $recorder.settings.clickHighlightSize) {
+                        ForEach(ClickHighlightSize.allCases) { size in
+                            Text(size.title).tag(size)
+                        }
                     }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 }
@@ -457,52 +478,70 @@ private struct RecordingActionPanel: View {
     @EnvironmentObject private var recorder: RecordingCoordinator
 
     var body: some View {
-        VStack(spacing: 18) {
-            ZStack {
-                Circle()
-                    .fill(indicatorColor.opacity(0.14))
-                    .frame(width: 108, height: 108)
-                Circle()
-                    .fill(indicatorColor)
-                    .frame(width: 66, height: 66)
-                    .overlay {
-                        Image(systemName: recorder.isRecording ? "stop.fill" : "record.circle")
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(.white)
+        VStack(spacing: 14) {
+            HStack(alignment: .center, spacing: 18) {
+                ZStack {
+                    Circle()
+                        .fill(indicatorColor.opacity(0.14))
+                        .frame(width: 78, height: 78)
+                    Circle()
+                        .fill(indicatorColor)
+                        .frame(width: 48, height: 48)
+                        .overlay {
+                            Image(systemName: recorder.isRecording ? "stop.fill" : "record.circle")
+                                .font(.system(size: 21, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(timerText)
+                        .font(.system(size: 30, weight: .medium, design: .monospaced))
+                        .contentTransition(.numericText())
+
+                    Text(recorder.menuStatusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(spacing: 8) {
+                    Button {
+                        Task { await recorder.toggleRecording() }
+                    } label: {
+                        Label(buttonTitle, systemImage: recorder.isRecording ? "stop.fill" : "record.circle")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(isButtonDisabled)
+
+                    Button {
+                        recorder.chooseVideoForEditor()
+                    } label: {
+                        Label("Video im Editor oeffnen", systemImage: "folder.badge.play")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .controlSize(.large)
+                    .disabled(recorder.isRecording)
+                }
+                .frame(width: 280)
             }
 
-            Text(timerText)
-                .font(.system(size: 34, weight: .medium, design: .monospaced))
-                .contentTransition(.numericText())
+            HStack(spacing: 18) {
+                Toggle("Countdown", isOn: $recorder.settings.countdownEnabled)
+                    .toggleStyle(.switch)
 
-            Button {
-                Task { await recorder.toggleRecording() }
-            } label: {
-                Label(buttonTitle, systemImage: recorder.isRecording ? "stop.fill" : "record.circle")
-                    .frame(maxWidth: .infinity)
+                Toggle("Fenster beim Start ausblenden", isOn: $recorder.settings.hideAppDuringRecording)
+                    .toggleStyle(.switch)
+                    .help("Start und Stop bleiben ueber das Menueleisten-Icon erreichbar.")
+
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(isButtonDisabled)
-
-            Button {
-                recorder.chooseVideoForEditor()
-            } label: {
-                Label("Video im Editor oeffnen", systemImage: "folder.badge.play")
-                    .frame(maxWidth: .infinity)
-            }
-            .controlSize(.large)
-            .disabled(recorder.isRecording)
-
-            Toggle("Countdown", isOn: $recorder.settings.countdownEnabled)
-                .toggleStyle(.switch)
-
-            Toggle("Fenster beim Start ausblenden", isOn: $recorder.settings.hideAppDuringRecording)
-                .toggleStyle(.switch)
-                .help("Start und Stop bleiben ueber das Menueleisten-Icon erreichbar.")
         }
-        .padding(18)
+        .padding(16)
         .frame(maxWidth: .infinity)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }

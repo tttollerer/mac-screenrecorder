@@ -296,7 +296,7 @@ final class RecordingCoordinator: ObservableObject {
             return
         }
 
-        hideMainInterfaceForRecording()
+        hideMainInterfaceForRegionSelection()
         defer {
             showMainInterfaceAfterRecording()
         }
@@ -353,7 +353,7 @@ final class RecordingCoordinator: ObservableObject {
 
         do {
             if settings.hideAppDuringRecording {
-                hideMainInterfaceForRecording()
+                minimizeMainInterfaceForRecording()
             }
             if settings.highlightClicks {
                 clickHighlighter.start(configuration: clickHighlightConfiguration)
@@ -503,17 +503,50 @@ final class RecordingCoordinator: ObservableObject {
         }
     }
 
-    private func hideMainInterfaceForRecording() {
+    private func hideMainInterfaceForRegionSelection() {
         hiddenRecordingWindows = NSApp.windows.filter { window in
             window.isVisible && !(window is ClickHighlightWindow)
         }
         hiddenRecordingWindows.forEach { $0.orderOut(nil) }
     }
 
+    private func minimizeMainInterfaceForRecording() {
+        hiddenRecordingWindows = NSApp.windows.filter { window in
+            window.isVisible
+                && !(window is ClickHighlightWindow)
+                && !(window is NSPanel)
+        }
+
+        for window in hiddenRecordingWindows {
+            if window.styleMask.contains(.miniaturizable) {
+                window.miniaturize(nil)
+            } else {
+                window.orderOut(nil)
+            }
+        }
+    }
+
+    func showMainInterfaceDuringRecording() {
+        restoreMainInterface(activate: true)
+    }
+
     private func showMainInterfaceAfterRecording() {
-        hiddenRecordingWindows.forEach { $0.makeKeyAndOrderFront(nil) }
+        restoreMainInterface(activate: true)
         hiddenRecordingWindows = []
-        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func restoreMainInterface(activate: Bool) {
+        for window in hiddenRecordingWindows {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.makeKeyAndOrderFront(nil)
+        }
+
+        NSApp.unhide(nil)
+        if activate {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     private func startElapsedTimer() {
@@ -550,6 +583,9 @@ final class RecordingCoordinator: ObservableObject {
             },
             onMicrophoneToggle: { [weak self] in
                 self?.toggleMicrophoneMute()
+            },
+            onShowMainWindow: { [weak self] in
+                self?.showMainInterfaceDuringRecording()
             },
             onStop: { [weak self] in
                 Task { await self?.stopRecording() }

@@ -10,9 +10,10 @@ struct MacScreenRecorderApp: App {
         WindowGroup("Mac Screenrecorder", id: "main") {
             ContentView()
                 .environmentObject(recorder)
-                .frame(minWidth: 1080, minHeight: 940)
+                .frame(minWidth: 1060, minHeight: 760)
         }
-        .windowResizability(.contentSize)
+        .defaultSize(width: 1180, height: 790)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .newItem) {
                 Button(recorder.isRecording ? "Aufnahme stoppen" : "Aufnahme starten") {
