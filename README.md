@@ -5,12 +5,15 @@ Native macOS screen recorder for presenting web apps.
 ## Features
 
 - Record full display, app window, or selected region
+- Web demo, Retina, social clip, and browser-window presets
 - Microphone and system audio capture
-- Adjustable resolution and video quality
-- Cursor capture and click highlighting
-- Floating mini controls for pause and stop
+- Adjustable resolution, codec, frame rate, bitrate, and video quality
+- Audio level meters for microphone and system audio
+- Cursor capture and configurable click highlighting
+- Countdown overlay before recording starts
+- Floating mini controls for pause, microphone mute, and stop
 - Simple trim editor after recording
-- Menu bar controls
+- Menu bar controls and keyboard shortcuts
 
 ## Requirements
 

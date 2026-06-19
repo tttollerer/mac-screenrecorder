@@ -10,7 +10,7 @@ struct MacScreenRecorderApp: App {
         WindowGroup("Mac Screenrecorder", id: "main") {
             ContentView()
                 .environmentObject(recorder)
-                .frame(minWidth: 980, minHeight: 820)
+                .frame(minWidth: 1080, minHeight: 940)
         }
         .windowResizability(.contentSize)
         .commands {
@@ -19,6 +19,18 @@ struct MacScreenRecorderApp: App {
                     Task { await recorder.toggleRecording() }
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+
+                Button(recorder.isPaused ? "Aufnahme fortsetzen" : "Aufnahme pausieren") {
+                    recorder.togglePauseRecording()
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .disabled(!recorder.isRecording)
+
+                Button(recorder.isMicrophoneMuted ? "Mikrofon einschalten" : "Mikrofon stumm schalten") {
+                    recorder.toggleMicrophoneMute()
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+                .disabled(!recorder.isRecording)
             }
         }
 
@@ -30,6 +42,16 @@ struct MacScreenRecorderApp: App {
                 Task { await recorder.toggleRecording() }
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
+
+            Button(recorder.isPaused ? "Fortsetzen" : "Pausieren") {
+                recorder.togglePauseRecording()
+            }
+            .disabled(!recorder.isRecording)
+
+            Button(recorder.isMicrophoneMuted ? "Mikrofon ein" : "Mikrofon stumm") {
+                recorder.toggleMicrophoneMute()
+            }
+            .disabled(!recorder.isRecording)
 
             Button("Fenster anzeigen") {
                 openWindow(id: "main")

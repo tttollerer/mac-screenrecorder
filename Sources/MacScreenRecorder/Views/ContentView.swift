@@ -18,12 +18,13 @@ struct ContentView: View {
 
                     HStack(alignment: .top, spacing: 22) {
                         VStack(spacing: 14) {
+                            PresetSection()
                             PermissionBanner()
                             SourceSection()
                             VideoSection()
                             AudioSection()
                         }
-                        .frame(width: 400)
+                        .frame(width: 430)
 
                         VStack(spacing: 14) {
                             RecordingActionPanel()
@@ -138,6 +139,34 @@ private struct PermissionBanner: View {
     }
 }
 
+private struct PresetSection: View {
+    @EnvironmentObject private var recorder: RecordingCoordinator
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Preset", systemImage: "wand.and.stars")
+                .font(.headline)
+
+            Picker("Preset", selection: $recorder.settings.selectedPreset) {
+                ForEach(RecordingPreset.allCases) { preset in
+                    Text(preset.title).tag(preset)
+                }
+            }
+            .pickerStyle(.menu)
+            .onChange(of: recorder.settings.selectedPreset) { _, preset in
+                recorder.applyPreset(preset)
+            }
+
+            Text(recorder.settings.selectedPreset.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
 private struct SourceSection: View {
     @EnvironmentObject private var recorder: RecordingCoordinator
 
@@ -155,9 +184,31 @@ private struct SourceSection: View {
             .pickerStyle(.segmented)
             .labelsHidden()
 
+            HStack {
+                Button {
+                    recorder.selectBrowserWindow()
+                } label: {
+                    Label("Browser suchen", systemImage: "safari")
+                }
+
+                if recorder.captureMode == .region {
+                    Button {
+                        Task { await recorder.selectRecordingRegion() }
+                    } label: {
+                        Label("Bereich ziehen", systemImage: "selection.pin.in.out")
+                    }
+                }
+
+                Spacer()
+            }
+
             List(recorder.visibleSources, selection: $recorder.selectedSourceID) { source in
                 SourceRow(source: source, captureMode: recorder.captureMode)
                     .tag(source.id)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        recorder.activateSource(source)
+                    }
                     .onTapGesture(count: 2) {
                         recorder.openLastRecordingOrChooseVideoForEditor()
                     }
@@ -249,6 +300,22 @@ private struct VideoSection: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            Picker("Codec", selection: $recorder.settings.videoCodec) {
+                ForEach(VideoCodec.allCases) { codec in
+                    Text(codec.title).tag(codec)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            Picker("FPS", selection: $recorder.settings.frameRate) {
+                ForEach(FrameRate.allCases) { frameRate in
+                    Text(frameRate.title).tag(frameRate)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
             Picker("Qualitaet", selection: $recorder.settings.videoQuality) {
                 ForEach(VideoQuality.allCases) { quality in
                     Text(quality.title).tag(quality)
@@ -260,10 +327,43 @@ private struct VideoSection: View {
             Text(recorder.settings.videoQuality.detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            HStack {
+                Text("Bitrate")
+                Spacer()
+                Text(bitrateLabel)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Slider(
+                value: Binding(
+                    get: { Double(recorder.settings.customBitrateMbps) },
+                    set: { recorder.settings.customBitrateMbps = Int($0.rounded()) }
+                ),
+                in: 0...120,
+                step: 2
+            )
+
+            Picker("Exportziel", selection: $recorder.settings.exportDestination) {
+                ForEach(ExportDestination.allCases) { destination in
+                    Text(destination.title).tag(destination)
+                }
+            }
+            .onChange(of: recorder.settings.exportDestination) { _, destination in
+                recorder.applyExportDestination(destination)
+            }
+
+            Text(recorder.settings.exportDestination.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var bitrateLabel: String {
+        recorder.settings.customBitrateMbps == 0 ? "Auto" : "\(recorder.settings.customBitrateMbps) Mbit/s"
     }
 }
 
@@ -286,9 +386,13 @@ private struct AudioSection: View {
             }
             .disabled(!recorder.settings.includeMicrophone)
 
+            LevelMeter(title: "Mic-Pegel", level: recorder.microphoneLevel)
+
             Toggle(isOn: $recorder.settings.includeSystemAudio) {
                 Label("Systemaudio", systemImage: "speaker.wave.2")
             }
+
+            LevelMeter(title: "System-Pegel", level: recorder.systemAudioLevel)
 
             Toggle(isOn: $recorder.settings.showCursor) {
                 Label("Cursor anzeigen", systemImage: "cursorarrow")
@@ -297,10 +401,55 @@ private struct AudioSection: View {
             Toggle(isOn: $recorder.settings.highlightClicks) {
                 Label("Klicks markieren", systemImage: "cursorarrow.click.2")
             }
+
+            if recorder.settings.highlightClicks {
+                Picker("Klickfarbe", selection: $recorder.settings.clickHighlightColor) {
+                    ForEach(ClickHighlightColor.allCases) { color in
+                        Text(color.title).tag(color)
+                    }
+                }
+
+                Picker("Klickgroesse", selection: $recorder.settings.clickHighlightSize) {
+                    ForEach(ClickHighlightSize.allCases) { size in
+                        Text(size.title).tag(size)
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct LevelMeter: View {
+    let title: String
+    let level: Float
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 78, alignment: .leading)
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.18))
+                    Capsule()
+                        .fill(levelColor)
+                        .frame(width: proxy.size.width * CGFloat(min(1, max(0, level))))
+                }
+            }
+            .frame(height: 7)
+        }
+    }
+
+    private var levelColor: Color {
+        if level > 0.82 { return .red }
+        if level > 0.58 { return .orange }
+        return .accentColor
     }
 }
 

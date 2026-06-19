@@ -40,6 +40,7 @@ final class ClickMarkerStore: @unchecked Sendable {
 @MainActor
 final class ClickHighlighterService {
     private let markerStore: ClickMarkerStore
+    private var configuration = ClickHighlightConfiguration(color: .blue, size: .normal)
     private var eventMonitor: Any?
     private var windows: [ClickHighlightWindow] = []
 
@@ -47,12 +48,13 @@ final class ClickHighlighterService {
         self.markerStore = markerStore
     }
 
-    func start() {
+    func start(configuration: ClickHighlightConfiguration) {
         stop()
+        self.configuration = configuration
         markerStore.clear()
 
         windows = NSScreen.screens.map { screen in
-            let window = ClickHighlightWindow(screenFrame: screen.frame)
+            let window = ClickHighlightWindow(screenFrame: screen.frame, configuration: configuration)
             window.orderFrontRegardless()
             return window
         }
@@ -93,7 +95,7 @@ final class ClickHighlighterService {
 final class ClickHighlightWindow: NSPanel {
     let highlightView = ClickHighlightView()
 
-    init(screenFrame: NSRect) {
+    init(screenFrame: NSRect, configuration: ClickHighlightConfiguration) {
         super.init(
             contentRect: screenFrame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -108,6 +110,7 @@ final class ClickHighlightWindow: NSPanel {
         sharingType = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         hasShadow = false
+        highlightView.configuration = configuration
         contentView = highlightView
     }
 }
@@ -121,6 +124,7 @@ final class ClickHighlightView: NSView {
 
     private var ripples: [Ripple] = []
     private var timer: Timer?
+    var configuration = ClickHighlightConfiguration(color: .blue, size: .normal)
 
     func addRipple(at point: NSPoint, isRightClick: Bool) {
         ripples.append(Ripple(point: point, isRightClick: isRightClick, startedAt: Date()))
@@ -138,7 +142,8 @@ final class ClickHighlightView: NSView {
             let age = now.timeIntervalSince(ripple.startedAt)
             let progress = min(1, age / 0.55)
             let alpha = max(0, 1 - progress)
-            let radius = 14 + progress * 38
+            let sizeScale = configuration.size.scale
+            let radius = (14 + progress * 38) * sizeScale
             let rect = NSRect(
                 x: ripple.point.x - radius,
                 y: ripple.point.y - radius,
@@ -148,16 +153,16 @@ final class ClickHighlightView: NSView {
 
             let color = ripple.isRightClick
                 ? NSColor.systemOrange.withAlphaComponent(alpha * 0.85)
-                : NSColor.systemBlue.withAlphaComponent(alpha * 0.85)
+                : configuration.color.nsColor.withAlphaComponent(alpha * 0.85)
 
             color.setStroke()
             let path = NSBezierPath(ovalIn: rect)
-            path.lineWidth = 5
+            path.lineWidth = 5 * sizeScale
             path.stroke()
 
             NSColor.white.withAlphaComponent(alpha * 0.9).setStroke()
-            let innerPath = NSBezierPath(ovalIn: rect.insetBy(dx: 8, dy: 8))
-            innerPath.lineWidth = 2
+            let innerPath = NSBezierPath(ovalIn: rect.insetBy(dx: 8 * sizeScale, dy: 8 * sizeScale))
+            innerPath.lineWidth = 2 * sizeScale
             innerPath.stroke()
         }
     }

@@ -38,6 +38,11 @@ enum ScreenCaptureTarget {
     }
 }
 
+enum CapturedAudioLevel {
+    case system
+    case microphone
+}
+
 struct CaptureEngineConfiguration {
     let target: ScreenCaptureTarget
     let outputURL: URL
@@ -47,7 +52,12 @@ struct CaptureEngineConfiguration {
     let showCursor: Bool
     let videoResolution: VideoResolution
     let videoQuality: VideoQuality
+    let videoCodec: VideoCodec
+    let frameRate: FrameRate
+    let customBitrateMbps: Int
     let clickMarkerStore: ClickMarkerStore?
+    let clickHighlightConfiguration: ClickHighlightConfiguration
+    let audioLevelHandler: (@MainActor (CapturedAudioLevel, Float) -> Void)?
 }
 
 final class ScreenCaptureRecorder: NSObject, @unchecked Sendable {
@@ -72,6 +82,7 @@ final class ScreenCaptureRecorder: NSObject, @unchecked Sendable {
     private var pauseStartedTime: CMTime?
     private var pendingResume = false
     private var isPaused = false
+    private var isMicrophoneMuted = false
     private var isFinishing = false
 
     init(configuration: CaptureEngineConfiguration) {
@@ -123,23 +134,32 @@ final class ScreenCaptureRecorder: NSObject, @unchecked Sendable {
         }
     }
 
+    func setMicrophoneMuted(_ isMuted: Bool) {
+        writerQueue.async { [weak self] in
+            self?.isMicrophoneMuted = isMuted
+        }
+    }
+
     private func prepareAssetWriter() throws {
         let writer = try AVAssetWriter(outputURL: configuration.outputURL, fileType: .mp4)
         let size = configuration.videoResolution.outputSize(for: configuration.target.pixelSize)
         let width = Self.evenPixel(max(2, Int(size.width)))
         let height = Self.evenPixel(max(2, Int(size.height)))
-        let bitrate = max(configuration.videoQuality.minimumBitrate, width * height * configuration.videoQuality.bitsPerPixel)
+        let computedBitrate = max(configuration.videoQuality.minimumBitrate, width * height * configuration.videoQuality.bitsPerPixel)
+        let bitrate = configuration.customBitrateMbps > 0
+            ? configuration.customBitrateMbps * 1_000_000
+            : computedBitrate
 
         let videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoCodecKey: configuration.videoCodec.avCodec,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitrate,
-                AVVideoMaxKeyFrameIntervalKey: 60,
+                AVVideoMaxKeyFrameIntervalKey: configuration.frameRate.rawValue * 2,
                 AVVideoAllowFrameReorderingKey: false,
                 AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
-                AVVideoExpectedSourceFrameRateKey: 30
+                AVVideoExpectedSourceFrameRateKey: configuration.frameRate.rawValue
             ]
         ]
 
@@ -179,8 +199,8 @@ final class ScreenCaptureRecorder: NSObject, @unchecked Sendable {
 
         streamConfiguration.width = Self.evenPixel(max(2, Int(size.width)))
         streamConfiguration.height = Self.evenPixel(max(2, Int(size.height)))
-        streamConfiguration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
-        streamConfiguration.queueDepth = 6
+        streamConfiguration.minimumFrameInterval = configuration.frameRate.frameInterval
+        streamConfiguration.queueDepth = configuration.frameRate == .fps60 ? 8 : 6
         streamConfiguration.showsCursor = configuration.showCursor
         streamConfiguration.capturesAudio = configuration.includeSystemAudio
         streamConfiguration.excludesCurrentProcessAudio = true
@@ -297,6 +317,15 @@ final class ScreenCaptureRecorder: NSObject, @unchecked Sendable {
 
             if media == .video {
                 self.drawClickMarkers(on: sampleBuffer)
+            }
+
+            if media == .systemAudio {
+                self.publishAudioLevel(from: sampleBuffer, kind: .system)
+            } else if media == .microphone {
+                self.publishAudioLevel(from: sampleBuffer, kind: .microphone)
+                if self.isMicrophoneMuted {
+                    return
+                }
             }
 
             let adjustedBaseTime = baseTime + self.accumulatedPausedDuration
@@ -445,7 +474,8 @@ final class ScreenCaptureRecorder: NSObject, @unchecked Sendable {
             let age = Date().timeIntervalSince(event.timestamp)
             let progress = min(1, max(0, age / 0.55))
             let alpha = max(0, 1 - progress)
-            let radius = 16 + progress * 44
+            let sizeScale = configuration.clickHighlightConfiguration.size.scale
+            let radius = (16 + progress * 44) * sizeScale
             let rect = CGRect(
                 x: point.x - radius,
                 y: point.y - radius,
@@ -453,16 +483,78 @@ final class ScreenCaptureRecorder: NSObject, @unchecked Sendable {
                 height: radius * 2
             )
 
-            context.setStrokeColor((event.isRightClick ? NSColor.systemOrange : NSColor.systemBlue).withAlphaComponent(alpha * 0.92).cgColor)
-            context.setLineWidth(6)
+            let baseColor = event.isRightClick ? NSColor.systemOrange : configuration.clickHighlightConfiguration.color.nsColor
+            context.setStrokeColor(baseColor.withAlphaComponent(alpha * 0.92).cgColor)
+            context.setLineWidth(6 * sizeScale)
             context.strokeEllipse(in: rect)
 
             context.setStrokeColor(NSColor.white.withAlphaComponent(alpha * 0.92).cgColor)
-            context.setLineWidth(2.5)
-            context.strokeEllipse(in: rect.insetBy(dx: 9, dy: 9))
+            context.setLineWidth(2.5 * sizeScale)
+            context.strokeEllipse(in: rect.insetBy(dx: 9 * sizeScale, dy: 9 * sizeScale))
         }
 
         context.restoreGState()
+    }
+
+    private func publishAudioLevel(from sampleBuffer: CMSampleBuffer, kind: CapturedAudioLevel) {
+        guard let handler = configuration.audioLevelHandler,
+              let level = Self.audioLevel(from: sampleBuffer) else {
+            return
+        }
+
+        DispatchQueue.main.async {
+            Task { @MainActor in
+                handler(kind, level)
+            }
+        }
+    }
+
+    private static func audioLevel(from sampleBuffer: CMSampleBuffer) -> Float? {
+        var blockBuffer: CMBlockBuffer?
+        var audioBufferList = AudioBufferList(
+            mNumberBuffers: 1,
+            mBuffers: AudioBuffer(
+                mNumberChannels: 0,
+                mDataByteSize: 0,
+                mData: nil
+            )
+        )
+
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: &audioBufferList,
+            bufferListSize: MemoryLayout<AudioBufferList>.size,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: 0,
+            blockBufferOut: &blockBuffer
+        )
+
+        guard status == noErr else { return nil }
+
+        var sum: Float = 0
+        var count: Int = 0
+
+        withUnsafeMutablePointer(to: &audioBufferList) { pointer in
+            pointer.withMemoryRebound(to: AudioBufferList.self, capacity: 1) { reboundPointer in
+                let buffers = UnsafeMutableAudioBufferListPointer(reboundPointer)
+                for buffer in buffers {
+                    guard let data = buffer.mData, buffer.mDataByteSize > 0 else { continue }
+                    let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                    guard sampleCount > 0 else { continue }
+                    let samples = data.bindMemory(to: Float.self, capacity: sampleCount)
+                    for index in 0..<sampleCount {
+                        let sample = samples[index]
+                        sum += sample * sample
+                    }
+                    count += sampleCount
+                }
+            }
+        }
+
+        guard count > 0 else { return nil }
+        return min(1, sqrt(sum / Float(count)) * 8)
     }
 
     private func videoPoint(for globalPoint: CGPoint, outputSize: CGSize) -> CGPoint? {

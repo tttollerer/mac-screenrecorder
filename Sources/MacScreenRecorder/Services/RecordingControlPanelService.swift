@@ -9,23 +9,27 @@ final class RecordingControlPanelService {
     func show(
         elapsedText: String,
         isPaused: Bool,
+        isMicrophoneMuted: Bool,
         onPauseToggle: @escaping @MainActor () -> Void,
+        onMicrophoneToggle: @escaping @MainActor () -> Void,
         onStop: @escaping @MainActor () -> Void
     ) {
         state.elapsedText = elapsedText
         state.isPaused = isPaused
+        state.isMicrophoneMuted = isMicrophoneMuted
 
         if panel == nil {
             let rootView = RecordingControlPanelView(
                 state: state,
                 onPauseToggle: onPauseToggle,
+                onMicrophoneToggle: onMicrophoneToggle,
                 onStop: onStop
             )
             let hostingView = NSHostingView(rootView: rootView)
-            hostingView.frame = CGRect(x: 0, y: 0, width: 292, height: 58)
+            hostingView.frame = CGRect(x: 0, y: 0, width: 338, height: 58)
 
             let panel = NSPanel(
-                contentRect: CGRect(x: 0, y: 0, width: 292, height: 58),
+                contentRect: CGRect(x: 0, y: 0, width: 338, height: 58),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -40,7 +44,7 @@ final class RecordingControlPanelService {
             panel.isMovableByWindowBackground = true
 
             if let screenFrame = NSScreen.main?.visibleFrame {
-                let x = screenFrame.midX - 146
+                let x = screenFrame.midX - 169
                 let y = screenFrame.maxY - 82
                 panel.setFrameOrigin(CGPoint(x: x, y: y))
             }
@@ -51,9 +55,10 @@ final class RecordingControlPanelService {
         panel?.orderFrontRegardless()
     }
 
-    func update(elapsedText: String, isPaused: Bool) {
+    func update(elapsedText: String, isPaused: Bool, isMicrophoneMuted: Bool) {
         state.elapsedText = elapsedText
         state.isPaused = isPaused
+        state.isMicrophoneMuted = isMicrophoneMuted
     }
 
     func close() {
@@ -66,11 +71,13 @@ final class RecordingControlPanelService {
 private final class RecordingControlPanelState: ObservableObject {
     @Published var elapsedText = "00:00"
     @Published var isPaused = false
+    @Published var isMicrophoneMuted = false
 }
 
 private struct RecordingControlPanelView: View {
     @ObservedObject var state: RecordingControlPanelState
     let onPauseToggle: @MainActor () -> Void
+    let onMicrophoneToggle: @MainActor () -> Void
     let onStop: @MainActor () -> Void
 
     var body: some View {
@@ -93,6 +100,15 @@ private struct RecordingControlPanelView: View {
             .help(state.isPaused ? "Fortsetzen" : "Pausieren")
 
             Button {
+                onMicrophoneToggle()
+            } label: {
+                Image(systemName: state.isMicrophoneMuted ? "mic.slash.fill" : "mic.fill")
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.borderless)
+            .help(state.isMicrophoneMuted ? "Mikrofon einschalten" : "Mikrofon stumm")
+
+            Button {
                 onStop()
             } label: {
                 Image(systemName: "stop.fill")
@@ -102,7 +118,7 @@ private struct RecordingControlPanelView: View {
             .help("Stoppen")
         }
         .padding(.horizontal, 14)
-        .frame(width: 292, height: 58)
+        .frame(width: 338, height: 58)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)

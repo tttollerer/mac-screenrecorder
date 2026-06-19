@@ -19,6 +19,9 @@ final class RecordingCoordinator: ObservableObject {
     @Published var elapsedSeconds: Int = 0
     @Published var screenPermissionGranted = true
     @Published var selectedRegion: SelectedCaptureRegion?
+    @Published var microphoneLevel: Float = 0
+    @Published var systemAudioLevel: Float = 0
+    @Published var isMicrophoneMuted = false
 
     @Published var settings = RecorderSettings()
 
@@ -30,6 +33,7 @@ final class RecordingCoordinator: ObservableObject {
     private let clickMarkerStore = ClickMarkerStore()
     private lazy var clickHighlighter = ClickHighlighterService(markerStore: clickMarkerStore)
     private let recordingControlPanel = RecordingControlPanelService()
+    private let countdownOverlay = CountdownOverlayService()
     private let regionSelectionService = RegionSelectionService()
 
     var isRecording: Bool {
@@ -236,6 +240,51 @@ final class RecordingCoordinator: ObservableObject {
         activeEditorURL = nil
     }
 
+    func applyPreset(_ preset: RecordingPreset) {
+        settings.apply(preset)
+
+        switch preset {
+        case .browserWindow:
+            captureMode = .window
+            selectBrowserWindow()
+        case .socialClip:
+            captureMode = .region
+            statusMessage = "Social Clip: Bereich auswaehlen und danach aufnehmen."
+        case .webDemo1080p, .retinaSharp:
+            captureMode = .display
+        }
+    }
+
+    func applyExportDestination(_ destination: ExportDestination) {
+        settings.apply(destination)
+        statusMessage = "Exportziel gesetzt: \(destination.title)"
+    }
+
+    func activateSource(_ source: CaptureSource) {
+        selectedSourceID = source.id
+
+        if captureMode == .region {
+            Task { await selectRecordingRegion() }
+        }
+    }
+
+    func selectBrowserWindow() {
+        captureMode = .window
+        let browserNames = ["Safari", "Google Chrome", "Chrome", "Microsoft Edge", "Firefox", "Arc", "Brave"]
+        if let browserWindow = visibleSources.first(where: { source in
+            browserNames.contains { name in
+                source.subtitle.localizedCaseInsensitiveContains(name)
+                    || source.title.localizedCaseInsensitiveContains(name)
+            }
+        }) {
+            selectedSourceID = browserWindow.id
+            statusMessage = "Browser-Fenster ausgewaehlt: \(browserWindow.subtitle)"
+        } else {
+            selectedSourceID = visibleSources.first?.id
+            statusMessage = "Kein Browser-Fenster gefunden. Browser oeffnen und Aktualisieren klicken."
+        }
+    }
+
     func selectRecordingRegion() async {
         guard let source = selectedCaptureSource(), let displayID = source.displayID else {
             statusMessage = "Bitte zuerst einen Bildschirm fuer den Bereich auswaehlen."
@@ -307,14 +356,16 @@ final class RecordingCoordinator: ObservableObject {
                 hideMainInterfaceForRecording()
             }
             if settings.highlightClicks {
-                clickHighlighter.start()
+                clickHighlighter.start(configuration: clickHighlightConfiguration)
             }
 
             if settings.countdownEnabled {
                 for value in stride(from: 3, through: 1, by: -1) {
                     state = .countdown(value)
+                    countdownOverlay.show(value: value)
                     try await Task.sleep(nanoseconds: 1_000_000_000)
                 }
+                countdownOverlay.close()
             }
 
             let outputURL = try RecordingFileNamer.makeOutputURL(
@@ -332,12 +383,20 @@ final class RecordingCoordinator: ObservableObject {
                     showCursor: settings.showCursor,
                     videoResolution: settings.videoResolution,
                     videoQuality: settings.videoQuality,
-                    clickMarkerStore: settings.highlightClicks ? clickMarkerStore : nil
+                    videoCodec: settings.videoCodec,
+                    frameRate: settings.frameRate,
+                    customBitrateMbps: settings.customBitrateMbps,
+                    clickMarkerStore: settings.highlightClicks ? clickMarkerStore : nil,
+                    clickHighlightConfiguration: clickHighlightConfiguration,
+                    audioLevelHandler: { [weak self] kind, level in
+                        self?.updateAudioLevel(kind: kind, level: level)
+                    }
                 )
             )
 
             try await engine.start()
             recorder = engine
+            isMicrophoneMuted = false
             state = .recording(startedAt: Date())
             elapsedSeconds = 0
             startElapsedTimer()
@@ -345,6 +404,7 @@ final class RecordingCoordinator: ObservableObject {
         } catch {
             recorder = nil
             clickHighlighter.stop()
+            countdownOverlay.close()
             recordingControlPanel.close()
             showMainInterfaceAfterRecording()
             state = .failed(error.localizedDescription)
@@ -355,7 +415,7 @@ final class RecordingCoordinator: ObservableObject {
         guard case .recording = state, let recorder else { return }
         recorder.pause()
         state = .paused
-        recordingControlPanel.update(elapsedText: formattedElapsedTime, isPaused: true)
+        recordingControlPanel.update(elapsedText: formattedElapsedTime, isPaused: true, isMicrophoneMuted: isMicrophoneMuted)
     }
 
     func resumeRecording() {
@@ -363,7 +423,7 @@ final class RecordingCoordinator: ObservableObject {
         clickMarkerStore.clear()
         recorder.resume()
         state = .recording(startedAt: Date())
-        recordingControlPanel.update(elapsedText: formattedElapsedTime, isPaused: false)
+        recordingControlPanel.update(elapsedText: formattedElapsedTime, isPaused: false, isMicrophoneMuted: isMicrophoneMuted)
     }
 
     func togglePauseRecording() {
@@ -379,7 +439,10 @@ final class RecordingCoordinator: ObservableObject {
         state = .stopping
         stopElapsedTimer()
         clickHighlighter.stop()
+        countdownOverlay.close()
         recordingControlPanel.close()
+        microphoneLevel = 0
+        systemAudioLevel = 0
 
         do {
             let url = try await recorder.stop()
@@ -394,6 +457,17 @@ final class RecordingCoordinator: ObservableObject {
             state = .failed(error.localizedDescription)
             showMainInterfaceAfterRecording()
         }
+    }
+
+    func toggleMicrophoneMute() {
+        guard isRecording else { return }
+        isMicrophoneMuted.toggle()
+        recorder?.setMicrophoneMuted(isMicrophoneMuted)
+        recordingControlPanel.update(
+            elapsedText: formattedElapsedTime,
+            isPaused: isPaused,
+            isMicrophoneMuted: isMicrophoneMuted
+        )
     }
 
     private func selectDefaultSourceForMode() {
@@ -450,7 +524,13 @@ final class RecordingCoordinator: ObservableObject {
                 if !self.isPaused {
                     self.elapsedSeconds += 1
                 }
-                self.recordingControlPanel.update(elapsedText: self.formattedElapsedTime, isPaused: self.isPaused)
+                self.recordingControlPanel.update(
+                    elapsedText: self.formattedElapsedTime,
+                    isPaused: self.isPaused,
+                    isMicrophoneMuted: self.isMicrophoneMuted
+                )
+                self.microphoneLevel *= 0.82
+                self.systemAudioLevel *= 0.82
             }
         }
     }
@@ -464,13 +544,33 @@ final class RecordingCoordinator: ObservableObject {
         recordingControlPanel.show(
             elapsedText: formattedElapsedTime,
             isPaused: isPaused,
+            isMicrophoneMuted: isMicrophoneMuted,
             onPauseToggle: { [weak self] in
                 self?.togglePauseRecording()
+            },
+            onMicrophoneToggle: { [weak self] in
+                self?.toggleMicrophoneMute()
             },
             onStop: { [weak self] in
                 Task { await self?.stopRecording() }
             }
         )
+    }
+
+    private var clickHighlightConfiguration: ClickHighlightConfiguration {
+        ClickHighlightConfiguration(
+            color: settings.clickHighlightColor,
+            size: settings.clickHighlightSize
+        )
+    }
+
+    private func updateAudioLevel(kind: CapturedAudioLevel, level: Float) {
+        switch kind {
+        case .system:
+            systemAudioLevel = level
+        case .microphone:
+            microphoneLevel = level
+        }
     }
 
     private func convertGlobalRectToSourceRect(
