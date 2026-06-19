@@ -21,13 +21,15 @@ struct ContentView: View {
                         PermissionBanner()
 
                         HStack(alignment: .top, spacing: 16) {
-                            SourceSection()
+                            VStack(spacing: 16) {
+                                SourceSection()
+                                LastRecordingPanel()
+                            }
                                 .frame(width: 460)
 
                             VStack(spacing: 16) {
                                 RecordingActionPanel()
                                 SettingsPanel(selectedTab: $settingsTab)
-                                LastRecordingPanel()
                             }
                                 .frame(maxWidth: .infinity)
                         }
