@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var recorder: RecordingCoordinator
+    @State private var settingsTab: SettingsPanelTab = .video
 
     var body: some View {
         Group {
@@ -17,23 +18,19 @@ struct ContentView: View {
                     Divider()
 
                     VStack(spacing: 16) {
-                        PresetSection()
                         PermissionBanner()
 
                         HStack(alignment: .top, spacing: 16) {
                             SourceSection()
-                                .frame(minWidth: 390, maxWidth: 500)
+                                .frame(width: 460)
 
-                            RecordingActionPanel()
+                            VStack(spacing: 16) {
+                                RecordingActionPanel()
+                                SettingsPanel(selectedTab: $settingsTab)
+                                LastRecordingPanel()
+                            }
                                 .frame(maxWidth: .infinity)
                         }
-
-                        HStack(alignment: .top, spacing: 16) {
-                            VideoSection()
-                            AudioSection()
-                        }
-
-                        LastRecordingPanel()
                     }
                     .padding(20)
                 }
@@ -46,11 +43,27 @@ struct ContentView: View {
     }
 }
 
+private enum SettingsPanelTab: String, CaseIterable, Identifiable {
+    case video
+    case audio
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .video:
+            "Video"
+        case .audio:
+            "Audio"
+        }
+    }
+}
+
 private struct HeaderView: View {
     @EnvironmentObject private var recorder: RecordingCoordinator
 
     var body: some View {
-        HStack {
+        HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Mac Screenrecorder")
                     .font(.system(size: 22, weight: .semibold))
@@ -60,6 +73,22 @@ private struct HeaderView: View {
             }
 
             Spacer()
+
+            HStack(spacing: 8) {
+                Text("Preset")
+                    .foregroundStyle(.secondary)
+
+                Picker("Preset", selection: $recorder.settings.selectedPreset) {
+                    ForEach(RecordingPreset.allCases) { preset in
+                        Text(preset.title).tag(preset)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 210)
+                .onChange(of: recorder.settings.selectedPreset) { _, preset in
+                    recorder.applyPreset(preset)
+                }
+            }
 
             Button {
                 Task { await recorder.refreshSources() }
@@ -138,6 +167,42 @@ private struct PermissionBanner: View {
             .padding(14)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         }
+    }
+}
+
+private struct SettingsPanel: View {
+    @Binding var selectedTab: SettingsPanelTab
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Einstellungen", systemImage: "slider.horizontal.3")
+                    .font(.headline)
+
+                Spacer()
+
+                Picker("Einstellungen", selection: $selectedTab) {
+                    ForEach(SettingsPanelTab.allCases) { tab in
+                        Text(tab.title).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 190)
+                .labelsHidden()
+            }
+
+            Group {
+                switch selectedTab {
+                case .video:
+                    VideoSection()
+                case .audio:
+                    AudioSection()
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -293,9 +358,6 @@ private struct VideoSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Video", systemImage: "rectangle.inset.filled")
-                .font(.headline)
-
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 7) {
                     Picker("Aufloesung", selection: $recorder.settings.videoResolution) {
@@ -375,8 +437,6 @@ private struct VideoSection: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var bitrateLabel: String {
@@ -389,9 +449,6 @@ private struct AudioSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Audio", systemImage: "waveform")
-                .font(.headline)
-
             HStack(spacing: 12) {
                 Toggle(isOn: $recorder.settings.includeMicrophone) {
                     Label("Mikrofon", systemImage: "mic")
@@ -438,8 +495,6 @@ private struct AudioSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
