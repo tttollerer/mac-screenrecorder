@@ -12,8 +12,8 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     HeaderView()
                         .padding(.horizontal, 24)
-                        .padding(.top, 22)
-                        .padding(.bottom, 16)
+                        .padding(.top, 10)
+                        .padding(.bottom, 10)
 
                     Divider()
 
@@ -40,6 +40,7 @@ struct ContentView: View {
             await recorder.refreshSources()
             recorder.reloadMicrophones()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -64,14 +65,6 @@ private struct HeaderView: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Mac Screenrecorder")
-                    .font(.system(size: 22, weight: .semibold))
-                Text(statusText)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
             Spacer()
 
             HStack(spacing: 8) {
@@ -84,6 +77,7 @@ private struct HeaderView: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .labelsHidden()
                 .frame(width: 210)
                 .onChange(of: recorder.settings.selectedPreset) { _, preset in
                     recorder.applyPreset(preset)
@@ -96,25 +90,6 @@ private struct HeaderView: View {
                 Label("Aktualisieren", systemImage: "arrow.clockwise")
             }
             .controlSize(.large)
-        }
-    }
-
-    private var statusText: String {
-        switch recorder.state {
-        case .idle:
-            recorder.statusMessage ?? "Bereit fuer die naechste Web-App-Demo"
-        case .preparing:
-            "Aufnahme wird vorbereitet"
-        case .countdown(let value):
-            "Start in \(value)"
-        case .recording:
-            "Aufnahme laeuft"
-        case .paused:
-            "Aufnahme pausiert"
-        case .stopping:
-            "Aufnahme wird gespeichert"
-        case .failed(let message):
-            message
         }
     }
 }
@@ -199,6 +174,7 @@ private struct SettingsPanel: View {
                     AudioSection()
                 }
             }
+            .frame(height: 250, alignment: .top)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
